@@ -45,17 +45,39 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function loadFirebaseAndInitialize() {
-    // Load Firebase scripts
+    console.log('Loading Firebase...');
+    
+    // Try to load Firebase, but don't block the app if it fails
     const script1 = document.createElement('script');
     script1.src = 'https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js';
+    
+    // Set a timeout to fallback to localStorage if Firebase doesn't load
+    const firebaseTimeout = setTimeout(() => {
+        console.log('Firebase loading timeout, falling back to localStorage');
+        initializeGameWithLocalStorage();
+    }, 5000);
+    
     script1.onload = function() {
         const script2 = document.createElement('script');
         script2.src = 'https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js';
         script2.onload = function() {
+            clearTimeout(firebaseTimeout);
             initializeFirebase();
+        };
+        script2.onerror = function() {
+            clearTimeout(firebaseTimeout);
+            console.log('Firebase database script failed to load, falling back to localStorage');
+            initializeGameWithLocalStorage();
         };
         document.head.appendChild(script2);
     };
+    
+    script1.onerror = function() {
+        clearTimeout(firebaseTimeout);
+        console.log('Firebase app script failed to load, falling back to localStorage');
+        initializeGameWithLocalStorage();
+    };
+    
     document.head.appendChild(script1);
 }
 
@@ -78,6 +100,8 @@ function initializeFirebase() {
 }
 
 function initializeGame() {
+    console.log('Initializing game...');
+    
     // Get room ID from URL or generate new one
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get('room');
@@ -97,6 +121,7 @@ function initializeGame() {
     // Update room info
     document.getElementById('roomId').textContent = gameState.roomId;
     document.getElementById('roomLink').textContent = window.location.href;
+    document.getElementById('debugInfo').textContent = `Room: ${gameState.roomId}, Firebase: ${firebaseLoaded}`;
 
     // Initialize Firebase room reference
     if (firebaseLoaded && database) {
@@ -114,6 +139,8 @@ function initializeGame() {
 }
 
 function initializeGameWithLocalStorage() {
+    console.log('Initializing game with localStorage...');
+    
     // Fallback initialization with localStorage
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get('room');
@@ -129,6 +156,7 @@ function initializeGameWithLocalStorage() {
 
     document.getElementById('roomId').textContent = gameState.roomId;
     document.getElementById('roomLink').textContent = window.location.href;
+    document.getElementById('debugInfo').textContent = `Room: ${gameState.roomId}, Local Mode`;
 
     // Setup localStorage listeners
     setupLocalStorageListeners();
@@ -229,46 +257,60 @@ function updateConnectionStatus(status) {
 }
 
 function setPlayerName() {
+    console.log('Setting player name...');
     const nameInput = document.getElementById('playerName');
     const name = nameInput.value.trim();
     
-    if (name && name.length > 0) {
-        // Check if name is already taken
-        if (gameState.players.has(name)) {
-            alert('This name is already taken. Please choose another name.');
-            return;
-        }
-        
-        currentPlayer = name;
-        document.getElementById('playerDisplay').textContent = name;
-        
-        // Add player to game state
-        const playerData = {
-            name: name,
-            playerId: playerId,
-            joinTime: Date.now(),
-            lastSeen: Date.now(),
-            isOnline: true
-        };
-        
-        gameState.players.set(name, playerData);
-        
-        // Save to Firebase or localStorage
-        if (firebaseLoaded && roomRef) {
-            console.log('Adding player to Firebase:', name, playerId);
-            roomRef.child(`players/${playerId}`).set(playerData)
-                .then(() => {
-                    console.log('Player added successfully');
-                    showGameInterface();
-                })
-                .catch((error) => {
-                    console.error('Error adding player:', error);
-                    alert('Failed to join room. Please try again.');
-                });
-        } else {
-            saveLocalRoomData();
-            showGameInterface();
-        }
+    if (!name || name.length === 0) {
+        alert('Please enter a name');
+        return;
+    }
+    
+    if (name.length > 20) {
+        alert('Name is too long. Please use 20 characters or less.');
+        return;
+    }
+    
+    // Check if name is already taken
+    if (gameState.players.has(name)) {
+        alert('This name is already taken. Please choose another name.');
+        return;
+    }
+    
+    console.log('Player name set to:', name);
+    currentPlayer = name;
+    document.getElementById('playerDisplay').textContent = name;
+    
+    // Add player to game state
+    const playerData = {
+        name: name,
+        playerId: playerId,
+        joinTime: Date.now(),
+        lastSeen: Date.now(),
+        isOnline: true
+    };
+    
+    gameState.players.set(name, playerData);
+    
+    // Save to Firebase or localStorage
+    if (firebaseLoaded && roomRef) {
+        console.log('Adding player to Firebase:', name, playerId);
+        roomRef.child(`players/${playerId}`).set(playerData)
+            .then(() => {
+                console.log('Player added successfully to Firebase');
+                showGameInterface();
+            })
+            .catch((error) => {
+                console.error('Error adding player to Firebase:', error);
+                // Fallback to localStorage
+                console.log('Falling back to localStorage after Firebase error');
+                saveLocalRoomData();
+                showGameInterface();
+            });
+    } else {
+        console.log('Using localStorage for player data');
+        saveLocalRoomData();
+        showGameInterface();
     }
 }
 
@@ -301,6 +343,8 @@ function logout() {
 }
 
 function showGameInterface() {
+    console.log('Showing game interface for player:', currentPlayer);
+    
     document.getElementById('playerSetup').style.display = 'none';
     document.getElementById('currentPlayer').style.display = 'flex';
     document.getElementById('onlinePlayers').style.display = 'flex';
@@ -473,6 +517,7 @@ function saveLocalRoomData() {
     
     try {
         localStorage.setItem(storageKey, JSON.stringify(roomData));
+        console.log('Room data saved to localStorage');
     } catch (e) {
         console.error('Error saving room data:', e);
     }
@@ -499,6 +544,7 @@ function loadLocalRoomData() {
             }
             
             updateDisplay();
+            console.log('Room data loaded from localStorage');
         }
     } catch (e) {
         console.error('Error loading room data:', e);
