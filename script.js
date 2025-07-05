@@ -271,8 +271,9 @@ function setPlayerName() {
         return;
     }
     
-    // Check if name is already taken
-    if (gameState.players.has(name)) {
+    // Check if name is already taken by a DIFFERENT player (not the current one)
+    const existingPlayer = gameState.players.get(name);
+    if (existingPlayer && existingPlayer.playerId !== playerId) {
         alert('This name is already taken. Please choose another name.');
         return;
     }
@@ -317,7 +318,12 @@ function setPlayerName() {
 function logout() {
     if (confirm('Are you sure you want to logout?')) {
         if (currentPlayer) {
-            // Mark player as offline
+            // Remove player from local game state
+            if (gameState.players.has(currentPlayer)) {
+                gameState.players.delete(currentPlayer);
+            }
+            
+            // Mark player as offline in Firebase
             if (firebaseLoaded && roomRef) {
                 roomRef.child(`players/${playerId}`).remove()
                     .then(() => {
@@ -327,9 +333,7 @@ function logout() {
                         console.error('Error removing player:', error);
                     });
             } else {
-                if (gameState.players.has(currentPlayer)) {
-                    gameState.players.delete(currentPlayer);
-                }
+                // Save updated state to localStorage
                 saveLocalRoomData();
             }
         }
