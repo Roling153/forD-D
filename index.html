@@ -16,17 +16,26 @@
             Setting up multiplayer room...
         </div>
         
-        <div class="player-setup" id="playerSetup" style="display: none;">
-            <input type="text" class="player-input" id="playerName" placeholder="Enter your name" maxlength="20">
-            <button class="set-name-btn" onclick="setPlayerName()">Join Game</button>
-        </div>
-
         <div class="room-info" id="roomInfo" style="display: none;">
             <div class="room-id">Room Code: <span id="roomId"></span></div>
             <div class="room-link">
                 <small>Share this link with friends:</small><br>
                 <span id="roomLink" style="cursor: pointer; text-decoration: underline; color: #10ac84;"></span>
                 <br><small>(Click to copy)</small>
+            </div>
+            <div class="debug-info" style="margin-top: 10px; font-size: 0.8em; color: rgba(255,255,255,0.7);">
+                <div>Debug: <span id="debugInfo">Initializing...</span></div>
+            </div>
+        </div>
+        
+        <div class="player-setup" id="playerSetup" style="display: none;">
+            <input type="text" class="player-input" id="playerName" placeholder="Enter your name" maxlength="20">
+            <button class="set-name-btn" onclick="setPlayerName()">Join Game</button>
+            <div class="setup-help" style="margin-top: 10px; font-size: 0.9em; color: rgba(255,255,255,0.8);">
+                <div>💡 Tips:</div>
+                <div>• Choose a unique name</div>
+                <div>• Share the room link with friends</div>
+                <div>• Multiple players can join the same room</div>
             </div>
         </div>
 
@@ -37,6 +46,9 @@
 
         <div class="online-players" id="onlinePlayers" style="display: none;">
             <div class="player-tag current" id="currentPlayerTag"></div>
+            <div class="players-label" style="margin-left: 10px; font-size: 0.9em; color: rgba(255,255,255,0.8);">
+                Online Players
+            </div>
         </div>
 
         <div class="dice-section" id="gameSection" style="display: none;">
@@ -76,6 +88,14 @@
                 <div class="stat-number" id="onlineCount">1</div>
                 <div class="stat-label">Online Players</div>
             </div>
+        </div>
+
+        <div class="troubleshooting" style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 10px; font-size: 0.9em; color: rgba(255,255,255,0.8);">
+            <h4>🔧 Troubleshooting:</h4>
+            <div>• If friends can't join, check your Firebase configuration</div>
+            <div>• Make sure everyone is using the same room link</div>
+            <div>• Check browser console (F12) for error messages</div>
+            <div>• In local mode, only same-device players can join</div>
         </div>
     </div>
 
