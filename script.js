@@ -24,6 +24,7 @@ let currentPlayer = null;
 let currentDiceType = 'd6';
 let connectionStatus = 'disconnected';
 let firebaseLoaded = false;
+let playerId = null; // Unique identifier for this player instance
 
 // Available dice types
 const diceTypes = {
@@ -36,7 +37,11 @@ const diceTypes = {
 
 // Initialize the game
 document.addEventListener('DOMContentLoaded', function() {
+    // Generate unique player ID
+    playerId = 'player_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    
     loadFirebaseAndInitialize();
+    setupEventListeners();
 });
 
 function loadFirebaseAndInitialize() {
@@ -62,6 +67,7 @@ function initializeFirebase() {
         firebaseLoaded = true;
         
         updateConnectionStatus('connected');
+        console.log('Firebase initialized successfully');
         initializeGame();
     } catch (error) {
         console.error('Firebase initialization error:', error);
@@ -79,9 +85,11 @@ function initializeGame() {
     if (roomParam) {
         gameState.roomId = roomParam;
         gameState.isHost = false;
+        console.log('Joining existing room:', roomParam);
     } else {
         gameState.roomId = generateRoomId();
         gameState.isHost = true;
+        console.log('Creating new room:', gameState.roomId);
         // Update URL with room ID
         window.history.replaceState({}, '', `?room=${gameState.roomId}`);
     }
@@ -124,6 +132,7 @@ function initializeGameWithLocalStorage() {
 
     // Setup localStorage listeners
     setupLocalStorageListeners();
+    loadLocalRoomData();
 
     setTimeout(() => {
         document.getElementById('loading').style.display = 'none';
@@ -136,18 +145,32 @@ function initializeGameWithLocalStorage() {
 function setupFirebaseListeners() {
     if (!roomRef) return;
 
+    console.log('Setting up Firebase listeners for room:', gameState.roomId);
+
     // Listen for room data changes
     roomRef.on('value', (snapshot) => {
         const roomData = snapshot.val();
+        console.log('Room data updated:', roomData);
+        
         if (roomData) {
-            // Update game state
-            gameState.rolls = roomData.rolls || [];
+            // Update rolls
+            gameState.rolls = [];
+            if (roomData.rolls) {
+                Object.values(roomData.rolls).forEach(roll => {
+                    gameState.rolls.push(roll);
+                });
+            }
             
             // Update players
             gameState.players.clear();
             if (roomData.players) {
-                Object.entries(roomData.players).forEach(([name, data]) => {
-                    gameState.players.set(name, data);
+                Object.entries(roomData.players).forEach(([playerKey, data]) => {
+                    if (data && data.name) {
+                        gameState.players.set(data.name, {
+                            ...data,
+                            playerKey: playerKey
+                        });
+                    }
                 });
             }
             
@@ -156,11 +179,16 @@ function setupFirebaseListeners() {
     });
 
     // Keep connection alive
-    setInterval(() => {
+    const keepAliveInterval = setInterval(() => {
         if (currentPlayer && roomRef) {
-            roomRef.child(`players/${currentPlayer}/lastSeen`).set(Date.now());
+            roomRef.child(`players/${playerId}/lastSeen`).set(Date.now());
         }
     }, 5000);
+
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+        clearInterval(keepAliveInterval);
+    });
 }
 
 function setupLocalStorageListeners() {
@@ -217,6 +245,7 @@ function setPlayerName() {
         // Add player to game state
         const playerData = {
             name: name,
+            playerId: playerId,
             joinTime: Date.now(),
             lastSeen: Date.now(),
             isOnline: true
@@ -226,12 +255,20 @@ function setPlayerName() {
         
         // Save to Firebase or localStorage
         if (firebaseLoaded && roomRef) {
-            roomRef.child(`players/${name}`).set(playerData);
+            console.log('Adding player to Firebase:', name, playerId);
+            roomRef.child(`players/${playerId}`).set(playerData)
+                .then(() => {
+                    console.log('Player added successfully');
+                    showGameInterface();
+                })
+                .catch((error) => {
+                    console.error('Error adding player:', error);
+                    alert('Failed to join room. Please try again.');
+                });
         } else {
             saveLocalRoomData();
+            showGameInterface();
         }
-        
-        showGameInterface();
     }
 }
 
@@ -240,10 +277,16 @@ function logout() {
         if (currentPlayer) {
             // Mark player as offline
             if (firebaseLoaded && roomRef) {
-                roomRef.child(`players/${currentPlayer}/isOnline`).set(false);
+                roomRef.child(`players/${playerId}`).remove()
+                    .then(() => {
+                        console.log('Player removed from Firebase');
+                    })
+                    .catch((error) => {
+                        console.error('Error removing player:', error);
+                    });
             } else {
                 if (gameState.players.has(currentPlayer)) {
-                    gameState.players.get(currentPlayer).isOnline = false;
+                    gameState.players.delete(currentPlayer);
                 }
                 saveLocalRoomData();
             }
@@ -323,6 +366,7 @@ function rollDice() {
             // Add roll data
             const rollData = {
                 player: currentPlayer,
+                playerId: playerId,
                 value: result,
                 diceType: currentDiceType,
                 timestamp: Date.now()
@@ -330,7 +374,13 @@ function rollDice() {
             
             // Save to Firebase or localStorage
             if (firebaseLoaded && roomRef) {
-                roomRef.child('rolls').push(rollData);
+                roomRef.child('rolls').push(rollData)
+                    .then(() => {
+                        console.log('Roll saved successfully');
+                    })
+                    .catch((error) => {
+                        console.error('Error saving roll:', error);
+                    });
             } else {
                 gameState.rolls.unshift(rollData);
                 saveLocalRoomData();
@@ -393,7 +443,7 @@ function updateStats() {
 function updateOnlinePlayers() {
     const container = document.getElementById('onlinePlayers');
     
-    // Remove old player tags
+    // Remove old player tags except current player
     container.querySelectorAll('.player-tag:not(.current)').forEach(tag => tag.remove());
     
     // Add online players
@@ -412,7 +462,7 @@ function saveLocalRoomData() {
     const storageKey = `diceGame_${gameState.roomId}`;
     const playersObj = {};
     gameState.players.forEach((player, name) => {
-        playersObj[name] = player;
+        playersObj[player.playerId || name] = player;
     });
     
     const roomData = {
@@ -438,8 +488,13 @@ function loadLocalRoomData() {
             
             gameState.players.clear();
             if (roomData.players) {
-                Object.entries(roomData.players).forEach(([name, data]) => {
-                    gameState.players.set(name, data);
+                Object.entries(roomData.players).forEach(([playerKey, data]) => {
+                    if (data && data.name) {
+                        gameState.players.set(data.name, {
+                            ...data,
+                            playerKey: playerKey
+                        });
+                    }
                 });
             }
             
@@ -468,8 +523,7 @@ function updateLocalPlayerStatus() {
     }
 }
 
-// Event listeners
-document.addEventListener('DOMContentLoaded', function() {
+function setupEventListeners() {
     // Allow Enter key to set name
     document.getElementById('playerName').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
@@ -501,21 +555,20 @@ document.addEventListener('DOMContentLoaded', function() {
             }, 2000);
         });
     });
-});
+}
 
 // Handle page visibility and unload
 document.addEventListener('visibilitychange', function() {
     if (currentPlayer && !document.hidden) {
         if (firebaseLoaded && roomRef) {
-            roomRef.child(`players/${currentPlayer}/lastSeen`).set(Date.now());
+            roomRef.child(`players/${playerId}/lastSeen`).set(Date.now());
         }
     }
 });
 
 window.addEventListener('beforeunload', function() {
-    if (currentPlayer) {
-        if (firebaseLoaded && roomRef) {
-            roomRef.child(`players/${currentPlayer}/isOnline`).set(false);
-        }
+    if (currentPlayer && firebaseLoaded && roomRef) {
+        // Mark player as offline when leaving
+        roomRef.child(`players/${playerId}/isOnline`).set(false);
     }
 });
