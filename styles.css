@@ -1,0 +1,383 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    color: white;
+}
+
+.container {
+    max-width: 800px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 30px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 30px;
+    font-size: 2.5em;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.dice-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 40px;
+}
+
+.dice {
+    width: 120px;
+    height: 120px;
+    background: white;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 4em;
+    font-weight: bold;
+    color: #333;
+    margin: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    cursor: pointer;
+}
+
+.dice:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+}
+
+.dice.rolling {
+    animation: rollAnimation 0.8s ease-in-out;
+}
+
+@keyframes rollAnimation {
+    0%, 100% { transform: rotate(0deg) scale(1); }
+    25% { transform: rotate(90deg) scale(1.1); }
+    50% { transform: rotate(180deg) scale(1.2); }
+    75% { transform: rotate(270deg) scale(1.1); }
+}
+
+.roll-button {
+    background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+    color: white;
+    border: none;
+    padding: 15px 30px;
+    font-size: 1.2em;
+    border-radius: 50px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    margin-top: 20px;
+}
+
+.roll-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+.roll-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.dice-controls {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.dice-selector {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 10px;
+    font-size: 1em;
+    background: rgba(255, 255, 255, 0.9);
+    color: #333;
+    cursor: pointer;
+}
+
+.clear-button {
+    background: linear-gradient(45deg, #e74c3c, #c0392b);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: all 0.3s ease;
+}
+
+.clear-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.logout-button {
+    background: linear-gradient(45deg, #f39c12, #d68910);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: all 0.3s ease;
+}
+
+.logout-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.player-setup {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+    gap: 10px;
+}
+
+.player-input {
+    padding: 10px 15px;
+    border: none;
+    border-radius: 10px;
+    font-size: 1em;
+    background: rgba(255, 255, 255, 0.9);
+    color: #333;
+}
+
+.set-name-btn {
+    background: linear-gradient(45deg, #10ac84, #00d2d3);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 1em;
+}
+
+.current-player {
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 1.2em;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+}
+
+.roll-history {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    padding: 20px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.roll-history h3 {
+    margin-bottom: 15px;
+    text-align: center;
+    color: #fff;
+}
+
+.roll-entry {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    margin-bottom: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    border-left: 4px solid #ff6b6b;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from { transform: translateX(-20px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.roll-entry.own-roll {
+    border-left-color: #10ac84;
+    background: rgba(16, 172, 132, 0.2);
+}
+
+.player-name {
+    font-weight: bold;
+    color: #fff;
+}
+
+.roll-result {
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #fff;
+}
+
+.roll-time {
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.online-players {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.player-tag {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 5px 12px;
+    border-radius: 15px;
+    font-size: 0.9em;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.player-tag.current {
+    background: rgba(16, 172, 132, 0.3);
+    border-color: #10ac84;
+}
+
+.player-tag.online {
+    background: rgba(46, 204, 113, 0.3);
+    border-color: #2ecc71;
+}
+
+.player-tag.online::after {
+    content: '';
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    background: #2ecc71;
+    border-radius: 50%;
+    top: -2px;
+    right: -2px;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.2); opacity: 0.7; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+.stats {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 20px;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-number {
+    font-size: 1.5em;
+    font-weight: bold;
+    color: #fff;
+}
+
+.stat-label {
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.loading {
+    text-align: center;
+    padding: 20px;
+    font-size: 1.2em;
+}
+
+.error {
+    background: rgba(231, 76, 60, 0.2);
+    border: 1px solid #e74c3c;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.connection-status {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 10px 15px;
+    border-radius: 10px;
+    font-size: 0.9em;
+    font-weight: bold;
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+
+.connection-status.connected {
+    background: rgba(46, 204, 113, 0.9);
+    color: white;
+}
+
+.connection-status.disconnected {
+    background: rgba(231, 76, 60, 0.9);
+    color: white;
+}
+
+.room-info {
+    text-align: center;
+    margin-bottom: 20px;
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+.room-id {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: #fff;
+    margin-bottom: 5px;
+}
+
+.room-link {
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.8);
+    word-break: break-all;
+}
+
+@media (max-width: 600px) {
+    .current-player {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .dice-controls {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .player-setup {
+        flex-direction: column;
+        gap: 10px;
+    }
+}
