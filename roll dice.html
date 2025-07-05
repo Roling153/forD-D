@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Dice Roller</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            color: white;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .dice-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 40px;
+        }
+
+        .dice {
+            width: 120px;
+            height: 120px;
+            background: white;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4em;
+            font-weight: bold;
+            color: #333;
+            margin: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            cursor: pointer;
+        }
+
+        .dice:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .dice.rolling {
+            animation: rollAnimation 0.8s ease-in-out;
+        }
+
+        @keyframes rollAnimation {
+            0%, 100% { transform: rotate(0deg) scale(1); }
+            25% { transform: rotate(90deg) scale(1.1); }
+            50% { transform: rotate(180deg) scale(1.2); }
+            75% { transform: rotate(270deg) scale(1.1); }
+        }
+
+        .roll-button {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.2em;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            margin-top: 20px;
+        }
+
+        .roll-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+        }
+
+        .dice-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .dice-selector {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1em;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            cursor: pointer;
+        }
+
+        .clear-button {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+        }
+
+        .clear-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .player-setup {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+
+        .player-input {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1em;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+        }
+
+        .set-name-btn {
+            background: linear-gradient(45deg, #10ac84, #00d2d3);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        .current-player {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+
+        .roll-history {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .roll-history h3 {
+            margin-bottom: 15px;
+            text-align: center;
+            color: #fff;
+        }
+
+        .roll-entry {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            border-left: 4px solid #ff6b6b;
+        }
+
+        .roll-entry.own-roll {
+            border-left-color: #10ac84;
+            background: rgba(16, 172, 132, 0.2);
+        }
+
+        .player-name {
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .roll-result {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .roll-time {
+            font-size: 0.8em;
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .online-players {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .player-tag {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .player-tag.current {
+            background: rgba(16, 172, 132, 0.3);
+            border-color: #10ac84;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            color: rgba(255, 255, 255, 0.8);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎲 Multiplayer Dice Roller</h1>
+        
+        <div class="player-setup" id="playerSetup">
+            <input type="text" class="player-input" id="playerName" placeholder="Enter your name" maxlength="20">
+            <button class="set-name-btn" onclick="setPlayerName()">Join Game</button>
+        </div>
+
+        <div class="current-player" id="currentPlayer" style="display: none;">
+            Welcome, <span id="playerDisplay"></span>!
+        </div>
+
+        <div class="online-players" id="onlinePlayers" style="display: none;">
+            <div class="player-tag current" id="currentPlayerTag"></div>
+        </div>
+
+        <div class="dice-section" id="gameSection" style="display: none;">
+            <div class="dice-controls">
+                <select class="dice-selector" id="diceSelector" onchange="changeDiceType()">
+                    <option value="d6">D6 (1-6)</option>
+                    <option value="d12">D12 (1-12)</option>
+                    <option value="d16">D16 (1-16)</option>
+                    <option value="d20">D20 (1-20)</option>
+                </select>
+                <button class="clear-button" onclick="clearScreen()">Clear History</button>
+            </div>
+            <div class="dice" id="dice" onclick="rollDice()">🎲</div>
+            <button class="roll-button" onclick="rollDice()">Roll Dice!</button>
+        </div>
+
+        <div class="roll-history" id="rollHistory" style="display: none;">
+            <h3>Recent Rolls</h3>
+            <div id="rollList"></div>
+        </div>
+
+        <div class="stats" id="stats" style="display: none;">
+            <div class="stat-item">
+                <div class="stat-number" id="totalRolls">0</div>
+                <div class="stat-label">Total Rolls</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="yourRolls">0</div>
+                <div class="stat-label">Your Rolls</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number" id="averageRoll">0</div>
+                <div class="stat-label">Average Roll</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simulate multiplayer functionality with in-memory storage
+        let gameState = {
+            players: new Map(),
+            rolls: [],
+            currentPlayer: null
+        };
+
+        // Available dice types
+        const diceTypes = {
+            d6: { sides: 6, symbol: '🎲' },
+            d12: { sides: 12, symbol: '🎯' },
+            d16: { sides: 16, symbol: '🔶' },
+            d20: { sides: 20, symbol: '🎪' }
+        };
+        
+        let currentDiceType = 'd6';
+
+        function setPlayerName() {
+            const nameInput = document.getElementById('playerName');
+            const name = nameInput.value.trim();
+            
+            if (name && name.length > 0) {
+                gameState.currentPlayer = name;
+                gameState.players.set(name, {
+                    name: name,
+                    rolls: 0,
+                    totalValue: 0,
+                    lastActive: Date.now()
+                });
+                
+                // Hide setup, show game
+                document.getElementById('playerSetup').style.display = 'none';
+                document.getElementById('currentPlayer').style.display = 'block';
+                document.getElementById('onlinePlayers').style.display = 'flex';
+                document.getElementById('gameSection').style.display = 'block';
+                document.getElementById('rollHistory').style.display = 'block';
+                document.getElementById('stats').style.display = 'flex';
+                
+                document.getElementById('playerDisplay').textContent = name;
+                document.getElementById('currentPlayerTag').textContent = name;
+                
+                updateDisplay();
+            }
+        }
+
+        function changeDiceType() {
+            const selector = document.getElementById('diceSelector');
+            currentDiceType = selector.value;
+            const dice = document.getElementById('dice');
+            dice.textContent = diceTypes[currentDiceType].symbol;
+        }
+
+        function clearScreen() {
+            if (confirm('Are you sure you want to clear all roll history?')) {
+                gameState.rolls = [];
+                // Reset player stats
+                gameState.players.forEach(player => {
+                    player.rolls = 0;
+                    player.totalValue = 0;
+                });
+                updateDisplay();
+            }
+        }
+
+        function rollDice() {
+            if (!gameState.currentPlayer) return;
+            
+            const dice = document.getElementById('dice');
+            const rollButton = document.querySelector('.roll-button');
+            
+            // Disable rolling during animation
+            rollButton.disabled = true;
+            dice.classList.add('rolling');
+            
+            // Show random numbers during animation
+            let animationCount = 0;
+            const maxSides = diceTypes[currentDiceType].sides;
+            const animationInterval = setInterval(() => {
+                dice.textContent = Math.floor(Math.random() * maxSides) + 1;
+                animationCount++;
+                
+                if (animationCount >= 8) {
+                    clearInterval(animationInterval);
+                    
+                    // Final result
+                    const result = Math.floor(Math.random() * maxSides) + 1;
+                    dice.textContent = result;
+                    
+                    // Add roll to history
+                    addRoll(gameState.currentPlayer, result, currentDiceType);
+                    
+                    // Re-enable button and remove animation
+                    setTimeout(() => {
+                        dice.classList.remove('rolling');
+                        rollButton.disabled = false;
+                        dice.textContent = diceTypes[currentDiceType].symbol;
+                        updateDisplay();
+                    }, 1000);
+                }
+            }, 100);
+        }
+
+        function addRoll(playerName, value, diceType = 'd6') {
+            const roll = {
+                player: playerName,
+                value: value,
+                diceType: diceType,
+                timestamp: Date.now(),
+                isCurrentPlayer: playerName === gameState.currentPlayer
+            };
+            
+            gameState.rolls.unshift(roll);
+            
+            // Keep only last 100 rolls
+            if (gameState.rolls.length > 100) {
+                gameState.rolls = gameState.rolls.slice(0, 100);
+            }
+            
+            // Update player stats
+            const player = gameState.players.get(playerName);
+            if (player) {
+                player.rolls++;
+                player.totalValue += value;
+                player.lastActive = Date.now();
+            }
+        }
+
+        function updateDisplay() {
+            updateRollHistory();
+            updateStats();
+            updateOnlinePlayers();
+        }
+
+        function updateRollHistory() {
+            const rollList = document.getElementById('rollList');
+            rollList.innerHTML = '';
+            
+            gameState.rolls.slice(0, 20).forEach(roll => {
+                const entry = document.createElement('div');
+                entry.className = `roll-entry ${roll.isCurrentPlayer ? 'own-roll' : ''}`;
+                
+                const timeStr = new Date(roll.timestamp).toLocaleTimeString();
+                const diceLabel = roll.diceType ? roll.diceType.toUpperCase() : 'D6';
+                
+                entry.innerHTML = `
+                    <div>
+                        <div class="player-name">${roll.player} (${diceLabel})</div>
+                        <div class="roll-time">${timeStr}</div>
+                    </div>
+                    <div class="roll-result">${roll.value}</div>
+                `;
+                
+                rollList.appendChild(entry);
+            });
+        }
+
+        function updateStats() {
+            const totalRolls = gameState.rolls.length;
+            const currentPlayerRolls = gameState.rolls.filter(r => r.isCurrentPlayer).length;
+            const averageRoll = totalRolls > 0 ? (gameState.rolls.reduce((sum, r) => sum + r.value, 0) / totalRolls).toFixed(1) : 0;
+            
+            document.getElementById('totalRolls').textContent = totalRolls;
+            document.getElementById('yourRolls').textContent = currentPlayerRolls;
+            document.getElementById('averageRoll').textContent = averageRoll;
+        }
+
+        function updateOnlinePlayers() {
+            const container = document.getElementById('onlinePlayers');
+            const currentTag = document.getElementById('currentPlayerTag');
+            
+            // Remove old player tags
+            container.querySelectorAll('.player-tag:not(.current)').forEach(tag => tag.remove());
+            
+            // Add other active players (in a real multiplayer scenario)
+            gameState.players.forEach((player, name) => {
+                if (name !== gameState.currentPlayer && Date.now() - player.lastActive < 60000) {
+                    const tag = document.createElement('div');
+                    tag.className = 'player-tag';
+                    tag.textContent = name;
+                    container.appendChild(tag);
+                }
+            });
+        }
+
+        // Allow Enter key to set name
+        document.getElementById('playerName').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                setPlayerName();
+            }
+        });
+    </script>
+</body>
+</html>
