@@ -48,6 +48,9 @@ function initializeGame() {
     // Initialize multiplayer storage
     initializeMultiplayerStorage();
 
+    // Set up event listeners for cross-tab communication
+    setupEventListeners();
+
     // Check if player name is stored
     setTimeout(() => {
         document.getElementById('loading').style.display = 'none';
@@ -66,27 +69,60 @@ function generateRoomId() {
 }
 
 function initializeMultiplayerStorage() {
-    // Try to load existing room data from in-memory storage
-    const savedData = getRoomDataFromMemory();
-    if (savedData) {
-        gameState.rolls = savedData.rolls || [];
-        
-        // Convert players object back to Map
-        if (savedData.players) {
-            Object.entries(savedData.players).forEach(([name, data]) => {
-                gameState.players.set(name, data);
-            });
+    // Use localStorage for cross-tab communication
+    const storageKey = `diceGame_${gameState.roomId}`;
+    
+    // Load existing room data
+    const existingData = localStorage.getItem(storageKey);
+    if (existingData) {
+        try {
+            const roomData = JSON.parse(existingData);
+            gameState.rolls = roomData.rolls || [];
+            
+            // Convert players object back to Map
+            if (roomData.players) {
+                Object.entries(roomData.players).forEach(([name, data]) => {
+                    gameState.players.set(name, data);
+                });
+            }
+        } catch (e) {
+            console.error('Error loading room data:', e);
         }
     }
-    
-    // Listen for storage events from other tabs/windows
-    window.addEventListener('storage', handleStorageEvent);
-    
-    // Use BroadcastChannel for cross-tab communication
-    if (typeof BroadcastChannel !== 'undefined') {
-        window.gameChannel = new BroadcastChannel(`dice-room-${gameState.roomId}`);
-        window.gameChannel.addEventListener('message', handleBroadcastMessage);
-    }
+}
+
+function setupEventListeners() {
+    // Listen for storage changes (cross-tab communication)
+    window.addEventListener('storage', function(e) {
+        if (e.key === `diceGame_${gameState.roomId}`) {
+            loadRoomData();
+        }
+    });
+
+    // Listen for custom events within the same tab
+    window.addEventListener('diceRoll', function(e) {
+        if (e.detail.roomId === gameState.roomId) {
+            loadRoomData();
+        }
+    });
+
+    window.addEventListener('playerJoin', function(e) {
+        if (e.detail.roomId === gameState.roomId) {
+            loadRoomData();
+        }
+    });
+
+    window.addEventListener('playerLeave', function(e) {
+        if (e.detail.roomId === gameState.roomId) {
+            loadRoomData();
+        }
+    });
+
+    window.addEventListener('clearHistory', function(e) {
+        if (e.detail.roomId === gameState.roomId) {
+            loadRoomData();
+        }
+    });
 }
 
 function updateConnectionStatus(status) {
@@ -134,7 +170,12 @@ function logout() {
     if (confirm('Are you sure you want to logout?')) {
         if (currentPlayer) {
             broadcastPlayerLeave(currentPlayer);
-            gameState.players.delete(currentPlayer);
+            
+            // Mark player as offline instead of deleting
+            if (gameState.players.has(currentPlayer)) {
+                gameState.players.get(currentPlayer).isOnline = false;
+            }
+            
             saveRoomData();
         }
         
@@ -272,7 +313,7 @@ function updateStats() {
 function updateOnlinePlayers() {
     const container = document.getElementById('onlinePlayers');
     
-    // Remove old player tags
+    // Remove old player tags (keep current player tag)
     container.querySelectorAll('.player-tag:not(.current)').forEach(tag => tag.remove());
     
     // Add online players
@@ -287,7 +328,9 @@ function updateOnlinePlayers() {
 }
 
 function saveRoomData() {
-    // Save current room state to memory storage
+    // Save current room state to localStorage
+    const storageKey = `diceGame_${gameState.roomId}`;
+    
     const playersObj = {};
     gameState.players.forEach((player, name) => {
         playersObj[name] = player;
@@ -299,118 +342,46 @@ function saveRoomData() {
         lastUpdate: Date.now()
     };
     
-    saveRoomDataToMemory(roomData);
+    try {
+        localStorage.setItem(storageKey, JSON.stringify(roomData));
+    } catch (e) {
+        console.error('Error saving room data:', e);
+    }
 }
 
 function loadRoomData() {
-    // Load room state from memory storage
-    const roomData = getRoomDataFromMemory();
-    if (roomData) {
-        gameState.rolls = roomData.rolls || [];
-        
-        // Update players but keep current player as online
-        gameState.players.clear();
-        if (roomData.players) {
-            Object.entries(roomData.players).forEach(([name, data]) => {
-                gameState.players.set(name, {
-                    ...data,
-                    isOnline: name === currentPlayer ? true : data.isOnline
-                });
-            });
-        }
-        
-        // Update current player's last seen time
-        if (currentPlayer && gameState.players.has(currentPlayer)) {
-            const player = gameState.players.get(currentPlayer);
-            player.lastSeen = Date.now();
-            player.isOnline = true;
-        }
-        
-        updateDisplay();
-    }
-}
-
-// Memory storage functions for cross-tab communication
-function getRoomDataFromMemory() {
-    try {
-        const key = `dice-room-${gameState.roomId}`;
-        const data = window.sessionStorage?.getItem(key) || 
-                    window.localStorage?.getItem(key) ||
-                    (window.sharedRoomData && window.sharedRoomData[gameState.roomId] ? 
-                     JSON.stringify(window.sharedRoomData[gameState.roomId]) : null);
-        return data ? JSON.parse(data) : null;
-    } catch (e) {
-        // Fallback to window-based storage
-        if (!window.sharedRoomData) window.sharedRoomData = {};
-        return window.sharedRoomData[gameState.roomId] || null;
-    }
-}
-
-function saveRoomDataToMemory(data) {
-    try {
-        const key = `dice-room-${gameState.roomId}`;
-        const dataStr = JSON.stringify(data);
-        
-        // Try multiple storage methods
-        try {
-            window.sessionStorage?.setItem(key, dataStr);
-        } catch (e) {}
-        
-        try {
-            window.localStorage?.setItem(key, dataStr);
-        } catch (e) {}
-        
-        // Fallback to window-based storage
-        if (!window.sharedRoomData) window.sharedRoomData = {};
-        window.sharedRoomData[gameState.roomId] = data;
-        
-        // Broadcast to other tabs
-        broadcastDataUpdate(data);
-    } catch (e) {
-        console.warn('Failed to save room data:', e);
-    }
-}
-
-function broadcastDataUpdate(data) {
-    // Use BroadcastChannel if available
-    if (window.gameChannel) {
-        window.gameChannel.postMessage({
-            type: 'dataUpdate',
-            data: data
-        });
-    }
+    // Load room state from localStorage
+    const storageKey = `diceGame_${gameState.roomId}`;
     
-    // Fallback: Use custom event
     try {
-        window.dispatchEvent(new CustomEvent('roomDataUpdate', {
-            detail: {
-                roomId: gameState.roomId,
-                data: data
+        const existingData = localStorage.getItem(storageKey);
+        if (existingData) {
+            const roomData = JSON.parse(existingData);
+            
+            gameState.rolls = roomData.rolls || [];
+            
+            // Update players but keep current player as online
+            gameState.players.clear();
+            if (roomData.players) {
+                Object.entries(roomData.players).forEach(([name, data]) => {
+                    gameState.players.set(name, {
+                        ...data,
+                        isOnline: name === currentPlayer ? true : data.isOnline
+                    });
+                });
             }
-        }));
-    } catch (e) {}
-}
-
-function handleBroadcastMessage(event) {
-    if (event.data.type === 'dataUpdate') {
-        // Update local state from broadcast
-        const data = event.data.data;
-        gameState.rolls = data.rolls || [];
-        
-        gameState.players.clear();
-        if (data.players) {
-            Object.entries(data.players).forEach(([name, playerData]) => {
-                gameState.players.set(name, playerData);
-            });
+            
+            // Update current player's last seen time
+            if (currentPlayer && gameState.players.has(currentPlayer)) {
+                const player = gameState.players.get(currentPlayer);
+                player.lastSeen = Date.now();
+                player.isOnline = true;
+            }
+            
+            updateDisplay();
         }
-        
-        updateDisplay();
-    }
-}
-
-function handleStorageEvent(event) {
-    if (event.key && event.key.startsWith('dice-room-') && event.key.includes(gameState.roomId)) {
-        loadRoomData();
+    } catch (e) {
+        console.error('Error loading room data:', e);
     }
 }
 
@@ -418,89 +389,45 @@ function handleStorageEvent(event) {
 function broadcastRoll(rollData) {
     console.log(`Roll broadcast: ${rollData.player} rolled ${rollData.value} on ${rollData.diceType}`);
     
-    // Broadcast via multiple channels
-    if (window.gameChannel) {
-        window.gameChannel.postMessage({
-            type: 'roll',
-            data: rollData
-        });
-    }
+    // Trigger custom event for other tabs/windows
+    window.dispatchEvent(new CustomEvent('diceRoll', {
+        detail: {
+            roomId: gameState.roomId,
+            rollData: rollData
+        }
+    }));
 }
 
 function broadcastPlayerJoin(playerName) {
     console.log(`Player ${playerName} joined room ${gameState.roomId}`);
     
-    if (window.gameChannel) {
-        window.gameChannel.postMessage({
-            type: 'playerJoin',
+    window.dispatchEvent(new CustomEvent('playerJoin', {
+        detail: {
+            roomId: gameState.roomId,
             playerName: playerName
-        });
-    }
+        }
+    }));
 }
 
 function broadcastPlayerLeave(playerName) {
     console.log(`Player ${playerName} left room ${gameState.roomId}`);
     
-    if (window.gameChannel) {
-        window.gameChannel.postMessage({
-            type: 'playerLeave',
+    window.dispatchEvent(new CustomEvent('playerLeave', {
+        detail: {
+            roomId: gameState.roomId,
             playerName: playerName
-        });
-    }
+        }
+    }));
 }
 
 function broadcastClearHistory() {
     console.log('History cleared by current player');
     
-    if (window.gameChannel) {
-        window.gameChannel.postMessage({
-            type: 'clearHistory'
-        });
-    }
-}
-
-// Listen for multiplayer events
-addEventListener('roomDataUpdate', function(e) {
-    if (e.detail.roomId === gameState.roomId) {
-        loadRoomData();
-    }
-});
-
-// Enhanced BroadcastChannel message handling
-function handleBroadcastMessage(event) {
-    const { type, data, playerName } = event.data;
-    
-    switch (type) {
-        case 'dataUpdate':
-            // Update local state from broadcast
-            gameState.rolls = data.rolls || [];
-            
-            gameState.players.clear();
-            if (data.players) {
-                Object.entries(data.players).forEach(([name, playerData]) => {
-                    gameState.players.set(name, playerData);
-                });
-            }
-            
-            updateDisplay();
-            break;
-            
-        case 'roll':
-            loadRoomData();
-            break;
-            
-        case 'playerJoin':
-            loadRoomData();
-            break;
-            
-        case 'playerLeave':
-            loadRoomData();
-            break;
-            
-        case 'clearHistory':
-            loadRoomData();
-            break;
-    }
+    window.dispatchEvent(new CustomEvent('clearHistory', {
+        detail: {
+            roomId: gameState.roomId
+        }
+    }));
 }
 
 function startSyncLoop() {
@@ -527,7 +454,7 @@ function startSyncLoop() {
             saveRoomData();
             loadRoomData();
         }
-    }, 5000);
+    }, 2000); // More frequent sync
 }
 
 // Allow Enter key to set name
@@ -540,6 +467,20 @@ document.getElementById('playerName').addEventListener('keypress', function(e) {
 // Copy room link functionality
 document.getElementById('roomLink').addEventListener('click', function() {
     navigator.clipboard.writeText(window.location.href).then(() => {
+        const originalText = this.textContent;
+        this.textContent = 'Link copied!';
+        setTimeout(() => {
+            this.textContent = originalText;
+        }, 2000);
+    }).catch(() => {
+        // Fallback for browsers that don't support clipboard API
+        const textArea = document.createElement('textarea');
+        textArea.value = window.location.href;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
         const originalText = this.textContent;
         this.textContent = 'Link copied!';
         setTimeout(() => {
@@ -574,5 +515,14 @@ window.addEventListener('beforeunload', function() {
     if (currentPlayer && gameState.players.has(currentPlayer)) {
         gameState.players.get(currentPlayer).isOnline = false;
         saveRoomData();
+    }
+});
+
+// Force refresh room data when window gains focus
+window.addEventListener('focus', function() {
+    if (currentPlayer) {
+        setTimeout(() => {
+            loadRoomData();
+        }, 100);
     }
 });
