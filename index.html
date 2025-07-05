@@ -277,9 +277,32 @@
             margin-bottom: 20px;
             text-align: center;
         }
+
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            z-index: 1000;
+        }
+
+        .connection-status.online {
+            background: #10ac84;
+            color: white;
+        }
+
+        .connection-status.offline {
+            background: #e74c3c;
+            color: white;
+        }
     </style>
 </head>
 <body>
+    <div class="connection-status" id="connectionStatus">🔄 Connecting...</div>
+    
     <div class="container">
         <h1>🎲 Multiplayer Dice Roller</h1>
         
@@ -339,33 +362,59 @@
         </div>
     </div>
 
-    <!-- Firebase SDK -->
+    <!-- Firebase SDK v9 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-app-compat.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-firestore-compat.min.js"></script>
 
     <script>
-        // Firebase configuration (using a demo project - replace with your own)
+        // 🔥 REPLACE THIS WITH YOUR FIREBASE CONFIG 🔥
         const firebaseConfig = {
-    apiKey: "AIzaSyAiEGbEdE_x2iMCf4-u5_BrVCdum8QdDos",
-    authDomain: "diceroll-ed858.firebaseapp.com",
-    projectId: "diceroll-ed858",
-    storageBucket: "diceroll-ed858.firebasestorage.app",
-    messagingSenderId: "640228121710",
-    appId: "1:640228121710:web:275b1f8651982bfdd95a7f"
-  };
+  apiKey: "AIzaSyAnn_i7Qxvb0Qbm8Ls6yiJMXT90aTqzRBE",
+  authDomain: "diceroll-d6e74.firebaseapp.com",
+  projectId: "diceroll-d6e74",
+  storageBucket: "diceroll-d6e74.firebasestorage.app",
+  messagingSenderId: "242850666678",
+  appId: "1:242850666678:web:19cd214746f76077e9ae17"
+};
 
         // Initialize Firebase
         let db;
         let isOnline = false;
+        let unsubscribeRolls = null;
+        let unsubscribePlayers = null;
+
+        function updateConnectionStatus(status) {
+            const statusEl = document.getElementById('connectionStatus');
+            if (status === 'online') {
+                statusEl.className = 'connection-status online';
+                statusEl.textContent = '🟢 Online';
+            } else if (status === 'offline') {
+                statusEl.className = 'connection-status offline';
+                statusEl.textContent = '🔴 Offline';
+            } else {
+                statusEl.className = 'connection-status';
+                statusEl.textContent = '🔄 Connecting...';
+            }
+        }
 
         try {
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
-            isOnline = true;
-            console.log("Firebase initialized successfully");
+            
+            // Test the connection
+            db.collection('test').limit(1).get().then(() => {
+                isOnline = true;
+                updateConnectionStatus('online');
+                console.log("Firebase connected successfully");
+            }).catch(error => {
+                console.error("Firebase connection test failed:", error);
+                isOnline = false;
+                updateConnectionStatus('offline');
+            });
         } catch (error) {
             console.error("Firebase initialization failed:", error);
             isOnline = false;
+            updateConnectionStatus('offline');
         }
 
         // Available dice types
@@ -385,7 +434,7 @@
 
         // Initialize the game
         document.addEventListener('DOMContentLoaded', function() {
-            initializeGame();
+            setTimeout(initializeGame, 1000); // Give Firebase time to initialize
         });
 
         async function initializeGame() {
@@ -419,6 +468,7 @@
                 error.style.display = 'block';
                 playerSetup.style.display = 'flex';
                 isOnline = false;
+                updateConnectionStatus('offline');
             }
         }
 
@@ -455,8 +505,12 @@
         function setupRealtimeListeners() {
             if (!isOnline) return;
 
+            // Clean up existing listeners
+            if (unsubscribeRolls) unsubscribeRolls();
+            if (unsubscribePlayers) unsubscribePlayers();
+
             // Listen for new rolls
-            db.collection('rolls')
+            unsubscribeRolls = db.collection('rolls')
                 .orderBy('timestamp', 'desc')
                 .limit(50)
                 .onSnapshot(snapshot => {
@@ -468,16 +522,22 @@
                         });
                     });
                     updateDisplay();
+                }, error => {
+                    console.error("Error listening to rolls:", error);
+                    updateConnectionStatus('offline');
                 });
 
             // Listen for player updates
-            db.collection('players')
+            unsubscribePlayers = db.collection('players')
                 .onSnapshot(snapshot => {
                     gameState.players = new Map();
                     snapshot.forEach(doc => {
                         gameState.players.set(doc.id, doc.data());
                     });
                     updateOnlinePlayers();
+                }, error => {
+                    console.error("Error listening to players:", error);
+                    updateConnectionStatus('offline');
                 });
         }
 
@@ -498,8 +558,10 @@
                         });
                         
                         setupRealtimeListeners();
+                        updateConnectionStatus('online');
                     } catch (error) {
                         console.error("Error setting player name:", error);
+                        updateConnectionStatus('offline');
                     }
                 }
                 
@@ -530,6 +592,7 @@
                 });
             } catch (error) {
                 console.error("Error updating player activity:", error);
+                updateConnectionStatus('offline');
             }
         }
 
@@ -564,6 +627,7 @@
                         
                     } catch (error) {
                         console.error("Error clearing screen:", error);
+                        updateConnectionStatus('offline');
                     }
                 } else {
                     gameState.rolls = [];
@@ -630,8 +694,11 @@
                         rolls: firebase.firestore.FieldValue.increment(1),
                         lastActive: firebase.firestore.FieldValue.serverTimestamp()
                     });
+                    
+                    updateConnectionStatus('online');
                 } catch (error) {
                     console.error("Error adding roll:", error);
+                    updateConnectionStatus('offline');
                 }
             } else {
                 // Offline mode
@@ -694,13 +761,21 @@
             // Remove old player tags
             container.querySelectorAll('.player-tag:not(.current)').forEach(tag => tag.remove());
             
-            // Add active players
+            // Add active players (filter out inactive players older than 5 minutes)
+            const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
             gameState.players.forEach((player, name) => {
                 if (name !== currentPlayer) {
-                    const tag = document.createElement('div');
-                    tag.className = 'player-tag';
-                    tag.textContent = name;
-                    container.appendChild(tag);
+                    let isActive = true;
+                    if (player.lastActive && player.lastActive.toDate) {
+                        isActive = player.lastActive.toDate().getTime() > fiveMinutesAgo;
+                    }
+                    
+                    if (isActive) {
+                        const tag = document.createElement('div');
+                        tag.className = 'player-tag';
+                        tag.textContent = name;
+                        container.appendChild(tag);
+                    }
                 }
             });
         }
@@ -710,6 +785,19 @@
             if (e.key === 'Enter') {
                 setPlayerName();
             }
+        });
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && currentPlayer) {
+                updatePlayerActivity();
+            }
+        });
+
+        // Clean up listeners when page unloads
+        window.addEventListener('beforeunload', function() {
+            if (unsubscribeRolls) unsubscribeRolls();
+            if (unsubscribePlayers) unsubscribePlayers();
         });
     </script>
 </body>
