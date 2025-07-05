@@ -170,6 +170,26 @@
             margin-bottom: 20px;
             font-size: 1.2em;
             font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .logout-button {
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s ease;
+        }
+
+        .logout-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
         }
 
         .roll-history {
@@ -320,7 +340,8 @@
         </div>
 
         <div class="current-player" id="currentPlayer" style="display: none;">
-            Welcome back, <span id="playerDisplay"></span>!
+            <span>Welcome back, <span id="playerDisplay"></span>!</span>
+            <button class="logout-button" onclick="logoutPlayer()">Logout</button>
         </div>
 
         <div class="online-players" id="onlinePlayers" style="display: none;">
@@ -369,13 +390,13 @@
     <script>
         // 🔥 REPLACE THIS WITH YOUR FIREBASE CONFIG 🔥
         const firebaseConfig = {
-  apiKey: "AIzaSyAnn_i7Qxvb0Qbm8Ls6yiJMXT90aTqzRBE",
-  authDomain: "diceroll-d6e74.firebaseapp.com",
-  projectId: "diceroll-d6e74",
-  storageBucket: "diceroll-d6e74.firebasestorage.app",
-  messagingSenderId: "242850666678",
-  appId: "1:242850666678:web:19cd214746f76077e9ae17"
-};
+            apiKey: "your-api-key-here",
+            authDomain: "your-project-id.firebaseapp.com",
+            projectId: "your-project-id",
+            storageBucket: "your-project-id.appspot.com",
+            messagingSenderId: "your-sender-id",
+            appId: "your-app-id"
+        };
 
         // Initialize Firebase
         let db;
@@ -541,7 +562,68 @@
                 });
         }
 
-        async function setPlayerName() {
+        async function logoutPlayer() {
+            if (confirm('Are you sure you want to logout? You will need to enter your name again to rejoin.')) {
+                try {
+                    // Update player status to inactive in Firebase
+                    if (isOnline && currentPlayer) {
+                        await db.collection('players').doc(currentPlayer).update({
+                            lastActive: firebase.firestore.FieldValue.serverTimestamp(),
+                            isActive: false
+                        });
+                    }
+                    
+                    // Clean up listeners
+                    if (unsubscribeRolls) {
+                        unsubscribeRolls();
+                        unsubscribeRolls = null;
+                    }
+                    if (unsubscribePlayers) {
+                        unsubscribePlayers();
+                        unsubscribePlayers = null;
+                    }
+                    
+                    // Clear local storage
+                    localStorage.removeItem('diceRollerPlayerName');
+                    
+                    // Reset current player
+                    currentPlayer = null;
+                    
+                    // Reset game state
+                    gameState = {
+                        players: new Map(),
+                        rolls: []
+                    };
+                    
+                    // Hide game interface and show player setup
+                    hideGameInterface();
+                    document.getElementById('playerSetup').style.display = 'flex';
+                    document.getElementById('playerName').value = '';
+                    document.getElementById('playerName').focus();
+                    
+                    updateConnectionStatus('offline');
+                    
+                } catch (error) {
+                    console.error("Error during logout:", error);
+                    // Still proceed with logout even if Firebase update fails
+                    localStorage.removeItem('diceRollerPlayerName');
+                    currentPlayer = null;
+                    hideGameInterface();
+                    document.getElementById('playerSetup').style.display = 'flex';
+                    document.getElementById('playerName').value = '';
+                }
+            }
+        }
+
+        function hideGameInterface() {
+            document.getElementById('currentPlayer').style.display = 'none';
+            document.getElementById('onlinePlayers').style.display = 'none';
+            document.getElementById('gameSection').style.display = 'none';
+            document.getElementById('rollHistory').style.display = 'none';
+            document.getElementById('stats').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('loading').style.display = 'none';
+        }
             const nameInput = document.getElementById('playerName');
             const name = nameInput.value.trim();
             
@@ -554,7 +636,8 @@
                         await db.collection('players').doc(name).set({
                             name: name,
                             lastActive: firebase.firestore.FieldValue.serverTimestamp(),
-                            rolls: 0
+                            rolls: 0,
+                            isActive: true
                         });
                         
                         setupRealtimeListeners();
@@ -588,7 +671,8 @@
             
             try {
                 await db.collection('players').doc(currentPlayer).update({
-                    lastActive: firebase.firestore.FieldValue.serverTimestamp()
+                    lastActive: firebase.firestore.FieldValue.serverTimestamp(),
+                    isActive: true
                 });
             } catch (error) {
                 console.error("Error updating player activity:", error);
@@ -761,13 +845,16 @@
             // Remove old player tags
             container.querySelectorAll('.player-tag:not(.current)').forEach(tag => tag.remove());
             
-            // Add active players (filter out inactive players older than 5 minutes)
+            // Add active players (filter out inactive players)
             const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
             gameState.players.forEach((player, name) => {
                 if (name !== currentPlayer) {
-                    let isActive = true;
+                    let isActive = player.isActive !== false; // Default to true if not set
+                    
+                    // Also check last active time
                     if (player.lastActive && player.lastActive.toDate) {
-                        isActive = player.lastActive.toDate().getTime() > fiveMinutesAgo;
+                        const lastActiveTime = player.lastActive.toDate().getTime();
+                        isActive = isActive && (lastActiveTime > fiveMinutesAgo);
                     }
                     
                     if (isActive) {
@@ -796,6 +883,14 @@
 
         // Clean up listeners when page unloads
         window.addEventListener('beforeunload', function() {
+            // Mark player as inactive when leaving
+            if (isOnline && currentPlayer) {
+                db.collection('players').doc(currentPlayer).update({
+                    isActive: false,
+                    lastActive: firebase.firestore.FieldValue.serverTimestamp()
+                }).catch(error => console.error("Error updating player status on unload:", error));
+            }
+            
             if (unsubscribeRolls) unsubscribeRolls();
             if (unsubscribePlayers) unsubscribePlayers();
         });
