@@ -98,6 +98,12 @@
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
         }
 
+        .roll-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .dice-controls {
             display: flex;
             justify-content: center;
@@ -256,19 +262,42 @@
             font-size: 0.9em;
             color: rgba(255, 255, 255, 0.8);
         }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 1.2em;
+        }
+
+        .error {
+            background: rgba(231, 76, 60, 0.2);
+            border: 1px solid #e74c3c;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎲 Multiplayer Dice Roller</h1>
         
-        <div class="player-setup" id="playerSetup">
+        <div class="loading" id="loading">
+            Connecting to game server...
+        </div>
+
+        <div class="error" id="error" style="display: none;">
+            <p>Connection failed. Using offline mode.</p>
+        </div>
+        
+        <div class="player-setup" id="playerSetup" style="display: none;">
             <input type="text" class="player-input" id="playerName" placeholder="Enter your name" maxlength="20">
             <button class="set-name-btn" onclick="setPlayerName()">Join Game</button>
         </div>
 
         <div class="current-player" id="currentPlayer" style="display: none;">
-            Welcome, <span id="playerDisplay"></span>!
+            Welcome back, <span id="playerDisplay"></span>!
         </div>
 
         <div class="online-players" id="onlinePlayers" style="display: none;">
@@ -310,13 +339,34 @@
         </div>
     </div>
 
+    <!-- Firebase SDK -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-app-compat.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.23.0/firebase-firestore-compat.min.js"></script>
+
     <script>
-        // Simulate multiplayer functionality with in-memory storage
-        let gameState = {
-            players: new Map(),
-            rolls: [],
-            currentPlayer: null
+        // Firebase configuration (using a demo project - replace with your own)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBqgdXnLwZ-LCr_wILCsHRdNQXKEOFVQVA",
+            authDomain: "dice-roller-demo.firebaseapp.com",
+            projectId: "dice-roller-demo",
+            storageBucket: "dice-roller-demo.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdef123456"
         };
+
+        // Initialize Firebase
+        let db;
+        let isOnline = false;
+
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            isOnline = true;
+            console.log("Firebase initialized successfully");
+        } catch (error) {
+            console.error("Firebase initialization failed:", error);
+            isOnline = false;
+        }
 
         // Available dice types
         const diceTypes = {
@@ -327,34 +377,164 @@
         };
         
         let currentDiceType = 'd6';
+        let currentPlayer = null;
+        let gameState = {
+            players: new Map(),
+            rolls: []
+        };
 
-        function setPlayerName() {
+        // Initialize the game
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeGame();
+        });
+
+        async function initializeGame() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const playerSetup = document.getElementById('playerSetup');
+
+            try {
+                if (isOnline) {
+                    // Try to connect to Firestore
+                    await loadGameState();
+                    
+                    // Check if player name is stored
+                    const storedName = localStorage.getItem('diceRollerPlayerName');
+                    if (storedName) {
+                        currentPlayer = storedName;
+                        document.getElementById('playerDisplay').textContent = storedName;
+                        showGameInterface();
+                        updatePlayerActivity();
+                        setupRealtimeListeners();
+                    } else {
+                        loading.style.display = 'none';
+                        playerSetup.style.display = 'flex';
+                    }
+                } else {
+                    throw new Error("Offline mode");
+                }
+            } catch (err) {
+                console.error("Failed to initialize online game:", err);
+                loading.style.display = 'none';
+                error.style.display = 'block';
+                playerSetup.style.display = 'flex';
+                isOnline = false;
+            }
+        }
+
+        async function loadGameState() {
+            if (!isOnline) return;
+            
+            try {
+                const rollsSnapshot = await db.collection('rolls')
+                    .orderBy('timestamp', 'desc')
+                    .limit(50)
+                    .get();
+                
+                gameState.rolls = [];
+                rollsSnapshot.forEach(doc => {
+                    gameState.rolls.push({
+                        id: doc.id,
+                        ...doc.data()
+                    });
+                });
+
+                const playersSnapshot = await db.collection('players').get();
+                gameState.players = new Map();
+                playersSnapshot.forEach(doc => {
+                    gameState.players.set(doc.id, doc.data());
+                });
+                
+                updateDisplay();
+            } catch (error) {
+                console.error("Error loading game state:", error);
+                throw error;
+            }
+        }
+
+        function setupRealtimeListeners() {
+            if (!isOnline) return;
+
+            // Listen for new rolls
+            db.collection('rolls')
+                .orderBy('timestamp', 'desc')
+                .limit(50)
+                .onSnapshot(snapshot => {
+                    gameState.rolls = [];
+                    snapshot.forEach(doc => {
+                        gameState.rolls.push({
+                            id: doc.id,
+                            ...doc.data()
+                        });
+                    });
+                    updateDisplay();
+                });
+
+            // Listen for player updates
+            db.collection('players')
+                .onSnapshot(snapshot => {
+                    gameState.players = new Map();
+                    snapshot.forEach(doc => {
+                        gameState.players.set(doc.id, doc.data());
+                    });
+                    updateOnlinePlayers();
+                });
+        }
+
+        async function setPlayerName() {
             const nameInput = document.getElementById('playerName');
             const name = nameInput.value.trim();
             
             if (name && name.length > 0) {
-                gameState.currentPlayer = name;
-                gameState.players.set(name, {
-                    name: name,
-                    rolls: 0,
-                    totalValue: 0,
-                    lastActive: Date.now()
-                });
+                currentPlayer = name;
+                localStorage.setItem('diceRollerPlayerName', name);
                 
-                // Hide setup, show game
-                document.getElementById('playerSetup').style.display = 'none';
-                document.getElementById('currentPlayer').style.display = 'block';
-                document.getElementById('onlinePlayers').style.display = 'flex';
-                document.getElementById('gameSection').style.display = 'block';
-                document.getElementById('rollHistory').style.display = 'block';
-                document.getElementById('stats').style.display = 'flex';
+                if (isOnline) {
+                    try {
+                        await db.collection('players').doc(name).set({
+                            name: name,
+                            lastActive: firebase.firestore.FieldValue.serverTimestamp(),
+                            rolls: 0
+                        });
+                        
+                        setupRealtimeListeners();
+                    } catch (error) {
+                        console.error("Error setting player name:", error);
+                    }
+                }
                 
                 document.getElementById('playerDisplay').textContent = name;
-                document.getElementById('currentPlayerTag').textContent = name;
-                
-                updateDisplay();
+                showGameInterface();
+                updatePlayerActivity();
             }
         }
+
+        function showGameInterface() {
+            document.getElementById('playerSetup').style.display = 'none';
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('currentPlayer').style.display = 'block';
+            document.getElementById('onlinePlayers').style.display = 'flex';
+            document.getElementById('gameSection').style.display = 'block';
+            document.getElementById('rollHistory').style.display = 'block';
+            document.getElementById('stats').style.display = 'flex';
+            
+            document.getElementById('currentPlayerTag').textContent = currentPlayer;
+        }
+
+        async function updatePlayerActivity() {
+            if (!isOnline || !currentPlayer) return;
+            
+            try {
+                await db.collection('players').doc(currentPlayer).update({
+                    lastActive: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } catch (error) {
+                console.error("Error updating player activity:", error);
+            }
+        }
+
+        // Update player activity every 30 seconds
+        setInterval(updatePlayerActivity, 30000);
 
         function changeDiceType() {
             const selector = document.getElementById('diceSelector');
@@ -363,20 +543,40 @@
             dice.textContent = diceTypes[currentDiceType].symbol;
         }
 
-        function clearScreen() {
+        async function clearScreen() {
             if (confirm('Are you sure you want to clear all roll history?')) {
-                gameState.rolls = [];
-                // Reset player stats
-                gameState.players.forEach(player => {
-                    player.rolls = 0;
-                    player.totalValue = 0;
-                });
-                updateDisplay();
+                if (isOnline) {
+                    try {
+                        const batch = db.batch();
+                        const rollsSnapshot = await db.collection('rolls').get();
+                        rollsSnapshot.forEach(doc => {
+                            batch.delete(doc.ref);
+                        });
+                        await batch.commit();
+                        
+                        // Reset player stats
+                        const playersSnapshot = await db.collection('players').get();
+                        const playerBatch = db.batch();
+                        playersSnapshot.forEach(doc => {
+                            playerBatch.update(doc.ref, { rolls: 0 });
+                        });
+                        await playerBatch.commit();
+                        
+                    } catch (error) {
+                        console.error("Error clearing screen:", error);
+                    }
+                } else {
+                    gameState.rolls = [];
+                    gameState.players.forEach(player => {
+                        player.rolls = 0;
+                    });
+                    updateDisplay();
+                }
             }
         }
 
-        function rollDice() {
-            if (!gameState.currentPlayer) return;
+        async function rollDice() {
+            if (!currentPlayer) return;
             
             const dice = document.getElementById('dice');
             const rollButton = document.querySelector('.roll-button');
@@ -399,42 +599,44 @@
                     const result = Math.floor(Math.random() * maxSides) + 1;
                     dice.textContent = result;
                     
-                    // Add roll to history
-                    addRoll(gameState.currentPlayer, result, currentDiceType);
+                    // Add roll to database
+                    addRoll(currentPlayer, result, currentDiceType);
                     
                     // Re-enable button and remove animation
                     setTimeout(() => {
                         dice.classList.remove('rolling');
                         rollButton.disabled = false;
                         dice.textContent = diceTypes[currentDiceType].symbol;
-                        updateDisplay();
                     }, 1000);
                 }
             }, 100);
         }
 
-        function addRoll(playerName, value, diceType = 'd6') {
-            const roll = {
+        async function addRoll(playerName, value, diceType = 'd6') {
+            const rollData = {
                 player: playerName,
                 value: value,
                 diceType: diceType,
-                timestamp: Date.now(),
-                isCurrentPlayer: playerName === gameState.currentPlayer
+                timestamp: isOnline ? firebase.firestore.FieldValue.serverTimestamp() : Date.now(),
+                isCurrentPlayer: playerName === currentPlayer
             };
             
-            gameState.rolls.unshift(roll);
-            
-            // Keep only last 100 rolls
-            if (gameState.rolls.length > 100) {
-                gameState.rolls = gameState.rolls.slice(0, 100);
-            }
-            
-            // Update player stats
-            const player = gameState.players.get(playerName);
-            if (player) {
-                player.rolls++;
-                player.totalValue += value;
-                player.lastActive = Date.now();
+            if (isOnline) {
+                try {
+                    await db.collection('rolls').add(rollData);
+                    
+                    // Update player stats
+                    await db.collection('players').doc(playerName).update({
+                        rolls: firebase.firestore.FieldValue.increment(1),
+                        lastActive: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } catch (error) {
+                    console.error("Error adding roll:", error);
+                }
+            } else {
+                // Offline mode
+                gameState.rolls.unshift(rollData);
+                updateDisplay();
             }
         }
 
@@ -450,9 +652,17 @@
             
             gameState.rolls.slice(0, 20).forEach(roll => {
                 const entry = document.createElement('div');
-                entry.className = `roll-entry ${roll.isCurrentPlayer ? 'own-roll' : ''}`;
+                entry.className = `roll-entry ${roll.player === currentPlayer ? 'own-roll' : ''}`;
                 
-                const timeStr = new Date(roll.timestamp).toLocaleTimeString();
+                let timeStr = 'Just now';
+                if (roll.timestamp) {
+                    if (roll.timestamp.toDate) {
+                        timeStr = roll.timestamp.toDate().toLocaleTimeString();
+                    } else {
+                        timeStr = new Date(roll.timestamp).toLocaleTimeString();
+                    }
+                }
+                
                 const diceLabel = roll.diceType ? roll.diceType.toUpperCase() : 'D6';
                 
                 entry.innerHTML = `
@@ -469,7 +679,7 @@
 
         function updateStats() {
             const totalRolls = gameState.rolls.length;
-            const currentPlayerRolls = gameState.rolls.filter(r => r.isCurrentPlayer).length;
+            const currentPlayerRolls = gameState.rolls.filter(r => r.player === currentPlayer).length;
             const averageRoll = totalRolls > 0 ? (gameState.rolls.reduce((sum, r) => sum + r.value, 0) / totalRolls).toFixed(1) : 0;
             
             document.getElementById('totalRolls').textContent = totalRolls;
@@ -484,9 +694,9 @@
             // Remove old player tags
             container.querySelectorAll('.player-tag:not(.current)').forEach(tag => tag.remove());
             
-            // Add other active players (in a real multiplayer scenario)
+            // Add active players
             gameState.players.forEach((player, name) => {
-                if (name !== gameState.currentPlayer && Date.now() - player.lastActive < 60000) {
+                if (name !== currentPlayer) {
                     const tag = document.createElement('div');
                     tag.className = 'player-tag';
                     tag.textContent = name;
