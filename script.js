@@ -1,3 +1,17 @@
+// Firebase configuration - You need to replace this with your own Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyAnn_i7Qxvb0Qbm8Ls6yiJMXT90aTqzRBE",
+  authDomain: "diceroll-d6e74.firebaseapp.com",
+  projectId: "diceroll-d6e74",
+  storageBucket: "diceroll-d6e74.firebasestorage.app",
+  messagingSenderId: "242850666678",
+  appId: "1:242850666678:web:19cd214746f76077e9ae17"
+};
+
+// Initialize Firebase (will be done when Firebase is loaded)
+let database = null;
+let roomRef = null;
+
 // Multiplayer game state
 let gameState = {
     players: new Map(),
@@ -8,9 +22,8 @@ let gameState = {
 
 let currentPlayer = null;
 let currentDiceType = 'd6';
-let syncInterval = null;
-let lastSyncTime = 0;
 let connectionStatus = 'disconnected';
+let firebaseLoaded = false;
 
 // Available dice types
 const diceTypes = {
@@ -23,8 +36,40 @@ const diceTypes = {
 
 // Initialize the game
 document.addEventListener('DOMContentLoaded', function() {
-    initializeGame();
+    loadFirebaseAndInitialize();
 });
+
+function loadFirebaseAndInitialize() {
+    // Load Firebase scripts
+    const script1 = document.createElement('script');
+    script1.src = 'https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js';
+    script1.onload = function() {
+        const script2 = document.createElement('script');
+        script2.src = 'https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js';
+        script2.onload = function() {
+            initializeFirebase();
+        };
+        document.head.appendChild(script2);
+    };
+    document.head.appendChild(script1);
+}
+
+function initializeFirebase() {
+    try {
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        database = firebase.database();
+        firebaseLoaded = true;
+        
+        updateConnectionStatus('connected');
+        initializeGame();
+    } catch (error) {
+        console.error('Firebase initialization error:', error);
+        // Fallback to localStorage for same-device multiplayer
+        updateConnectionStatus('local-mode');
+        initializeGameWithLocalStorage();
+    }
+}
 
 function initializeGame() {
     // Get room ID from URL or generate new one
@@ -45,84 +90,98 @@ function initializeGame() {
     document.getElementById('roomId').textContent = gameState.roomId;
     document.getElementById('roomLink').textContent = window.location.href;
 
-    // Initialize multiplayer storage
-    initializeMultiplayerStorage();
+    // Initialize Firebase room reference
+    if (firebaseLoaded && database) {
+        roomRef = database.ref(`rooms/${gameState.roomId}`);
+        setupFirebaseListeners();
+    }
 
-    // Set up event listeners for cross-tab communication
-    setupEventListeners();
-
-    // Check if player name is stored
+    // Show UI
     setTimeout(() => {
         document.getElementById('loading').style.display = 'none';
         document.getElementById('roomInfo').style.display = 'block';
         document.getElementById('playerSetup').style.display = 'flex';
         document.getElementById('playerName').focus();
-        
-        // Start connection simulation
-        updateConnectionStatus('connected');
-        startSyncLoop();
     }, 1000);
 }
 
-function generateRoomId() {
-    return Math.random().toString(36).substring(2, 8).toUpperCase();
+function initializeGameWithLocalStorage() {
+    // Fallback initialization with localStorage
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room');
+    
+    if (roomParam) {
+        gameState.roomId = roomParam;
+        gameState.isHost = false;
+    } else {
+        gameState.roomId = generateRoomId();
+        gameState.isHost = true;
+        window.history.replaceState({}, '', `?room=${gameState.roomId}`);
+    }
+
+    document.getElementById('roomId').textContent = gameState.roomId;
+    document.getElementById('roomLink').textContent = window.location.href;
+
+    // Setup localStorage listeners
+    setupLocalStorageListeners();
+
+    setTimeout(() => {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('roomInfo').style.display = 'block';
+        document.getElementById('playerSetup').style.display = 'flex';
+        document.getElementById('playerName').focus();
+    }, 1000);
 }
 
-function initializeMultiplayerStorage() {
-    // Use localStorage for cross-tab communication
-    const storageKey = `diceGame_${gameState.roomId}`;
-    
-    // Load existing room data
-    const existingData = localStorage.getItem(storageKey);
-    if (existingData) {
-        try {
-            const roomData = JSON.parse(existingData);
+function setupFirebaseListeners() {
+    if (!roomRef) return;
+
+    // Listen for room data changes
+    roomRef.on('value', (snapshot) => {
+        const roomData = snapshot.val();
+        if (roomData) {
+            // Update game state
             gameState.rolls = roomData.rolls || [];
             
-            // Convert players object back to Map
+            // Update players
+            gameState.players.clear();
             if (roomData.players) {
                 Object.entries(roomData.players).forEach(([name, data]) => {
                     gameState.players.set(name, data);
                 });
             }
-        } catch (e) {
-            console.error('Error loading room data:', e);
+            
+            updateDisplay();
         }
-    }
+    });
+
+    // Keep connection alive
+    setInterval(() => {
+        if (currentPlayer && roomRef) {
+            roomRef.child(`players/${currentPlayer}/lastSeen`).set(Date.now());
+        }
+    }, 5000);
 }
 
-function setupEventListeners() {
-    // Listen for storage changes (cross-tab communication)
+function setupLocalStorageListeners() {
+    // Fallback for localStorage
     window.addEventListener('storage', function(e) {
         if (e.key === `diceGame_${gameState.roomId}`) {
-            loadRoomData();
+            loadLocalRoomData();
         }
     });
 
-    // Listen for custom events within the same tab
-    window.addEventListener('diceRoll', function(e) {
-        if (e.detail.roomId === gameState.roomId) {
-            loadRoomData();
+    // Sync loop for localStorage
+    setInterval(() => {
+        if (currentPlayer) {
+            updateLocalPlayerStatus();
+            loadLocalRoomData();
         }
-    });
+    }, 3000);
+}
 
-    window.addEventListener('playerJoin', function(e) {
-        if (e.detail.roomId === gameState.roomId) {
-            loadRoomData();
-        }
-    });
-
-    window.addEventListener('playerLeave', function(e) {
-        if (e.detail.roomId === gameState.roomId) {
-            loadRoomData();
-        }
-    });
-
-    window.addEventListener('clearHistory', function(e) {
-        if (e.detail.roomId === gameState.roomId) {
-            loadRoomData();
-        }
-    });
+function generateRoomId() {
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
 function updateConnectionStatus(status) {
@@ -130,8 +189,11 @@ function updateConnectionStatus(status) {
     const statusEl = document.getElementById('connectionStatus');
     
     if (status === 'connected') {
-        statusEl.textContent = '🟢 Connected';
+        statusEl.textContent = '🟢 Connected (Real-time)';
         statusEl.className = 'connection-status connected';
+    } else if (status === 'local-mode') {
+        statusEl.textContent = '🟡 Local Mode (Same Device Only)';
+        statusEl.className = 'connection-status local-mode';
     } else {
         statusEl.textContent = '🔴 Disconnected';
         statusEl.className = 'connection-status disconnected';
@@ -153,34 +215,41 @@ function setPlayerName() {
         document.getElementById('playerDisplay').textContent = name;
         
         // Add player to game state
-        gameState.players.set(name, {
+        const playerData = {
             name: name,
             joinTime: Date.now(),
             lastSeen: Date.now(),
             isOnline: true
-        });
+        };
+        
+        gameState.players.set(name, playerData);
+        
+        // Save to Firebase or localStorage
+        if (firebaseLoaded && roomRef) {
+            roomRef.child(`players/${name}`).set(playerData);
+        } else {
+            saveLocalRoomData();
+        }
         
         showGameInterface();
-        saveRoomData();
-        broadcastPlayerJoin(name);
     }
 }
 
 function logout() {
     if (confirm('Are you sure you want to logout?')) {
         if (currentPlayer) {
-            broadcastPlayerLeave(currentPlayer);
-            
-            // Mark player as offline instead of deleting
-            if (gameState.players.has(currentPlayer)) {
-                gameState.players.get(currentPlayer).isOnline = false;
+            // Mark player as offline
+            if (firebaseLoaded && roomRef) {
+                roomRef.child(`players/${currentPlayer}/isOnline`).set(false);
+            } else {
+                if (gameState.players.has(currentPlayer)) {
+                    gameState.players.get(currentPlayer).isOnline = false;
+                }
+                saveLocalRoomData();
             }
-            
-            saveRoomData();
         }
         
         currentPlayer = null;
-        
         hideGameInterface();
         document.getElementById('playerSetup').style.display = 'flex';
         document.getElementById('playerName').value = '';
@@ -219,8 +288,13 @@ function changeDiceType() {
 function clearScreen() {
     if (confirm('Are you sure you want to clear all roll history?')) {
         gameState.rolls = [];
-        saveRoomData();
-        broadcastClearHistory();
+        
+        if (firebaseLoaded && roomRef) {
+            roomRef.child('rolls').remove();
+        } else {
+            saveLocalRoomData();
+        }
+        
         updateDisplay();
     }
 }
@@ -246,19 +320,22 @@ function rollDice() {
             const result = Math.floor(Math.random() * maxSides) + 1;
             dice.textContent = result;
             
-            // Add roll and broadcast to other players
+            // Add roll data
             const rollData = {
                 player: currentPlayer,
                 value: result,
                 diceType: currentDiceType,
-                timestamp: Date.now(),
-                isCurrentPlayer: true
+                timestamp: Date.now()
             };
             
-            gameState.rolls.unshift(rollData);
-            saveRoomData();
-            broadcastRoll(rollData);
-            updateDisplay();
+            // Save to Firebase or localStorage
+            if (firebaseLoaded && roomRef) {
+                roomRef.child('rolls').push(rollData);
+            } else {
+                gameState.rolls.unshift(rollData);
+                saveLocalRoomData();
+                updateDisplay();
+            }
             
             setTimeout(() => {
                 dice.classList.remove('rolling');
@@ -279,7 +356,10 @@ function updateRollHistory() {
     const rollList = document.getElementById('rollList');
     rollList.innerHTML = '';
     
-    gameState.rolls.slice(0, 20).forEach(roll => {
+    // Sort rolls by timestamp (newest first)
+    const sortedRolls = [...gameState.rolls].sort((a, b) => b.timestamp - a.timestamp);
+    
+    sortedRolls.slice(0, 20).forEach(roll => {
         const entry = document.createElement('div');
         entry.className = `roll-entry ${roll.player === currentPlayer ? 'own-roll' : ''}`;
         
@@ -313,7 +393,7 @@ function updateStats() {
 function updateOnlinePlayers() {
     const container = document.getElementById('onlinePlayers');
     
-    // Remove old player tags (keep current player tag)
+    // Remove old player tags
     container.querySelectorAll('.player-tag:not(.current)').forEach(tag => tag.remove());
     
     // Add online players
@@ -327,10 +407,9 @@ function updateOnlinePlayers() {
     });
 }
 
-function saveRoomData() {
-    // Save current room state to localStorage
+// LocalStorage fallback functions
+function saveLocalRoomData() {
     const storageKey = `diceGame_${gameState.roomId}`;
-    
     const playersObj = {};
     gameState.players.forEach((player, name) => {
         playersObj[name] = player;
@@ -349,33 +428,19 @@ function saveRoomData() {
     }
 }
 
-function loadRoomData() {
-    // Load room state from localStorage
+function loadLocalRoomData() {
     const storageKey = `diceGame_${gameState.roomId}`;
-    
     try {
         const existingData = localStorage.getItem(storageKey);
         if (existingData) {
             const roomData = JSON.parse(existingData);
-            
             gameState.rolls = roomData.rolls || [];
             
-            // Update players but keep current player as online
             gameState.players.clear();
             if (roomData.players) {
                 Object.entries(roomData.players).forEach(([name, data]) => {
-                    gameState.players.set(name, {
-                        ...data,
-                        isOnline: name === currentPlayer ? true : data.isOnline
-                    });
+                    gameState.players.set(name, data);
                 });
-            }
-            
-            // Update current player's last seen time
-            if (currentPlayer && gameState.players.has(currentPlayer)) {
-                const player = gameState.players.get(currentPlayer);
-                player.lastSeen = Date.now();
-                player.isOnline = true;
             }
             
             updateDisplay();
@@ -385,144 +450,72 @@ function loadRoomData() {
     }
 }
 
-// Multiplayer communication functions
-function broadcastRoll(rollData) {
-    console.log(`Roll broadcast: ${rollData.player} rolled ${rollData.value} on ${rollData.diceType}`);
-    
-    // Trigger custom event for other tabs/windows
-    window.dispatchEvent(new CustomEvent('diceRoll', {
-        detail: {
-            roomId: gameState.roomId,
-            rollData: rollData
-        }
-    }));
-}
-
-function broadcastPlayerJoin(playerName) {
-    console.log(`Player ${playerName} joined room ${gameState.roomId}`);
-    
-    window.dispatchEvent(new CustomEvent('playerJoin', {
-        detail: {
-            roomId: gameState.roomId,
-            playerName: playerName
-        }
-    }));
-}
-
-function broadcastPlayerLeave(playerName) {
-    console.log(`Player ${playerName} left room ${gameState.roomId}`);
-    
-    window.dispatchEvent(new CustomEvent('playerLeave', {
-        detail: {
-            roomId: gameState.roomId,
-            playerName: playerName
-        }
-    }));
-}
-
-function broadcastClearHistory() {
-    console.log('History cleared by current player');
-    
-    window.dispatchEvent(new CustomEvent('clearHistory', {
-        detail: {
-            roomId: gameState.roomId
-        }
-    }));
-}
-
-function startSyncLoop() {
-    syncInterval = setInterval(() => {
-        // Sync with shared room data
-        lastSyncTime = Date.now();
+function updateLocalPlayerStatus() {
+    if (currentPlayer && gameState.players.has(currentPlayer)) {
+        const player = gameState.players.get(currentPlayer);
+        player.lastSeen = Date.now();
+        player.isOnline = true;
         
-        if (currentPlayer) {
-            // Update current player's last seen time
-            if (gameState.players.has(currentPlayer)) {
-                const player = gameState.players.get(currentPlayer);
-                player.lastSeen = Date.now();
-                player.isOnline = true;
+        // Mark other players as offline if not seen recently
+        const now = Date.now();
+        gameState.players.forEach((p, name) => {
+            if (name !== currentPlayer && now - p.lastSeen > 30000) {
+                p.isOnline = false;
             }
-            
-            // Mark players as offline if they haven't been seen recently
-            const now = Date.now();
-            gameState.players.forEach((player, name) => {
-                if (name !== currentPlayer && now - player.lastSeen > 30000) {
-                    player.isOnline = false;
-                }
-            });
-            
-            saveRoomData();
-            loadRoomData();
-        }
-    }, 2000); // More frequent sync
+        });
+        
+        saveLocalRoomData();
+    }
 }
 
-// Allow Enter key to set name
-document.getElementById('playerName').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        setPlayerName();
-    }
-});
-
-// Copy room link functionality
-document.getElementById('roomLink').addEventListener('click', function() {
-    navigator.clipboard.writeText(window.location.href).then(() => {
-        const originalText = this.textContent;
-        this.textContent = 'Link copied!';
-        setTimeout(() => {
-            this.textContent = originalText;
-        }, 2000);
-    }).catch(() => {
-        // Fallback for browsers that don't support clipboard API
-        const textArea = document.createElement('textarea');
-        textArea.value = window.location.href;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-        
-        const originalText = this.textContent;
-        this.textContent = 'Link copied!';
-        setTimeout(() => {
-            this.textContent = originalText;
-        }, 2000);
+// Event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Allow Enter key to set name
+    document.getElementById('playerName').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            setPlayerName();
+        }
+    });
+    
+    // Copy room link functionality
+    document.getElementById('roomLink').addEventListener('click', function() {
+        navigator.clipboard.writeText(window.location.href).then(() => {
+            const originalText = this.textContent;
+            this.textContent = 'Link copied!';
+            setTimeout(() => {
+                this.textContent = originalText;
+            }, 2000);
+        }).catch(() => {
+            // Fallback
+            const textArea = document.createElement('textarea');
+            textArea.value = window.location.href;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            
+            const originalText = this.textContent;
+            this.textContent = 'Link copied!';
+            setTimeout(() => {
+                this.textContent = originalText;
+            }, 2000);
+        });
     });
 });
 
-// Handle page visibility changes
+// Handle page visibility and unload
 document.addEventListener('visibilitychange', function() {
-    if (currentPlayer) {
-        if (document.hidden) {
-            // Mark player as potentially offline
-            if (gameState.players.has(currentPlayer)) {
-                gameState.players.get(currentPlayer).lastSeen = Date.now();
-            }
-        } else {
-            // Mark player as online when returning to tab
-            if (gameState.players.has(currentPlayer)) {
-                const player = gameState.players.get(currentPlayer);
-                player.lastSeen = Date.now();
-                player.isOnline = true;
-            }
-            saveRoomData();
-            loadRoomData();
+    if (currentPlayer && !document.hidden) {
+        if (firebaseLoaded && roomRef) {
+            roomRef.child(`players/${currentPlayer}/lastSeen`).set(Date.now());
         }
     }
 });
 
-// Handle before unload to mark player as offline
 window.addEventListener('beforeunload', function() {
-    if (currentPlayer && gameState.players.has(currentPlayer)) {
-        gameState.players.get(currentPlayer).isOnline = false;
-        saveRoomData();
-    }
-});
-
-// Force refresh room data when window gains focus
-window.addEventListener('focus', function() {
     if (currentPlayer) {
-        setTimeout(() => {
-            loadRoomData();
-        }, 100);
+        if (firebaseLoaded && roomRef) {
+            roomRef.child(`players/${currentPlayer}/isOnline`).set(false);
+        }
     }
 });
